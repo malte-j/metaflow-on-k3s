@@ -1,0 +1,96 @@
+# Deploys a new Namespace for the MinIO Pod
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minio # Change this value if you want a different namespace name
+  labels:
+    name: minio # Change this value to match metadata.name
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s3-pvc
+  namespace: minio
+spec:
+  storageClassName: local-path
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+
+---
+# https://kubernetes.io/docs/concepts/configuration/secret/
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio
+  namespace: minio
+  labels:
+    app: minio
+data:
+  MINIO_ROOT_USER: bWluaW91c2Vy # miniouser
+  MINIO_ROOT_PASSWORD: bWluaW9wYXNzd29yZA== # miniopassword
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: minio
+
+spec:
+  ports:
+    - protocol: TCP
+      name: minio
+      port: 9000
+    - protocol: TCP
+      name: minio-console
+      port: 9001
+  selector:
+    app: minio
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  namespace: minio
+  name: minio
+  labels:
+    app: minio
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: quay.io/minio/minio:latest
+          args: ['server', '/data', '--console-address', ':9001']
+          ports:
+            - name: minio
+              containerPort: 9000
+            - name: minio-console
+              containerPort: 9001
+          volumeMounts:
+            - name: s3-pv-storage
+              mountPath: /data
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: MINIO_ROOT_PASSWORD
+      volumes:
+        - name: s3-pv-storage
+          persistentVolumeClaim:
+            claimName: s3-pvc
